@@ -176,7 +176,7 @@ jobs:
       - name: Ensure Azure embedding deployment
         if: steps.gate.outputs.should_run == 'true'
         id: azure
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           RG: rg-toh-consumer-production
         with:

@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Bicep
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -151,7 +151,7 @@ jobs:
 
       - name: Resolve staging dependencies
         id: azure
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
         with:
@@ -187,7 +187,7 @@ jobs:
             echo "ai_key=$AI_KEY" >> "$GITHUB_OUTPUT"
 
       - name: What-if staging runtime
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
           IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
@@ -203,7 +203,7 @@ jobs:
             az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerNextPublicTurnstileSiteKey="$NEXT_PUBLIC_TURNSTILE_SITE_KEY"               consumerTurnstileSecretKey="$TURNSTILE_SECRET_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"
 
       - name: Deploy staging runtime
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
           IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
@@ -219,7 +219,7 @@ jobs:
             az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerNextPublicTurnstileSiteKey="$NEXT_PUBLIC_TURNSTILE_SITE_KEY"               consumerTurnstileSecretKey="$TURNSTILE_SECRET_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"
 
       - name: Smoke-test Azure Container App
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
         with:
@@ -256,7 +256,7 @@ jobs:
             exit 1
 
       - name: Smoke-test consumer pages before DNS cutover
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -295,7 +295,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke-test consumer APIs before DNS cutover
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail

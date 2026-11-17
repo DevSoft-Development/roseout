@@ -54,7 +54,7 @@ jobs:
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary,secondary --attempts 90 --interval 10 --label "Front Door baseline"
 
       - name: Disable primary Front Door origin
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -78,7 +78,7 @@ jobs:
 
       - name: Restore primary Front Door origin
         if: always()
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail

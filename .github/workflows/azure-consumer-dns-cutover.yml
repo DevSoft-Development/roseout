@@ -59,7 +59,7 @@ jobs:
 
       - name: Resolve and verify Azure Front Door consumer domains
         id: azure
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail

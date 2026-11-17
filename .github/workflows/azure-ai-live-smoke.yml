@@ -53,7 +53,7 @@ jobs:
 
       - name: Resolve Foundry account and deployment
         id: foundry
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           TARGET_DEPLOYMENT: ${{ inputs.deployment }}
         with:
@@ -116,7 +116,7 @@ jobs:
             echo "capacity=$CAPACITY" >> "$GITHUB_OUTPUT"
 
       - name: Prepare ephemeral gateway credentials
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           RG: ${{ steps.foundry.outputs.resource_group }}
           ACCOUNT: ${{ steps.foundry.outputs.account }}

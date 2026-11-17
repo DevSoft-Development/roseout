@@ -43,7 +43,7 @@ jobs:
 
       - name: Resolve Foundry account
         id: foundry
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -75,7 +75,7 @@ jobs:
             echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
 
       - name: Inspect account models
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           RG: ${{ steps.foundry.outputs.resource_group }}
           ACCOUNT: ${{ steps.foundry.outputs.account }}
@@ -113,7 +113,7 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Inspect regional quota
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           LOCATION: ${{ steps.foundry.outputs.location }}
           REQUESTED_MODEL: ${{ inputs.model }}

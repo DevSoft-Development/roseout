@@ -80,7 +80,7 @@ jobs:
           ' mobile/ota.config.json >/dev/null
 
       - name: Build Azure Bicep
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -106,7 +106,7 @@ jobs:
 
       - name: Resolve existing consumer edge
         id: consumer
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -116,7 +116,7 @@ jobs:
             echo "Consumer edge origin: $EDGE"
 
       - name: Deploy production OTA foundation and custom domain
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           CONSUMER_EDGE: ${{ steps.consumer.outputs.edge }}
         with:
@@ -235,7 +235,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Ensure production OTA Azure foundation
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -243,7 +243,7 @@ jobs:
 
       - name: Resolve OTA storage authority
         id: azure
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
