@@ -36,7 +36,7 @@ jobs:
 
       - name: Upload sanitized Azure revision report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-azure-revisions
           path: ${{ github.workspace }}/azure-revisions.jsonl
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload sanitized AWS service report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-aws-services
           path: ${{ runner.temp }}/aws-services.jsonl

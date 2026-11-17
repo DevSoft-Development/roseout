@@ -105,7 +105,7 @@ jobs:
           rm -f report/service-arns.txt report/task-arns.txt report/task-query-error.txt
       - name: Upload sanitized operations report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aws-ops-readonly-${{ inputs.environment }}-${{ github.run_id }}
           path: report/*.json
