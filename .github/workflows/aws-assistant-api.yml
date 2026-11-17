@@ -56,7 +56,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate Assistant API Python syntax
         run: python -m py_compile infra/aws/lambda/platform_assistant_api.py
       - name: Install CloudFormation linter
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Resolve deployment configuration
         id: config
         env:

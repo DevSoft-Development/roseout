@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Verify published bootstrap location is returned by live consumer search
         run: node scripts/certify-li-v2-bootstrap-live-search.mjs
       - name: Record certification scope

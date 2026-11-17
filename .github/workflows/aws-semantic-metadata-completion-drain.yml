@@ -36,7 +36,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate deterministic semantic completion contract
         run: |
           set -euo pipefail
@@ -56,7 +56,7 @@ jobs:
     environment: production
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 

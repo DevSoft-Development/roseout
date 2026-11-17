@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate placement inputs
         env:

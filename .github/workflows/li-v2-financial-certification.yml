@@ -34,7 +34,7 @@ jobs:
       PG_URL: postgresql://postgres:certification-only@localhost:5432/li_v2_cert
       LI_V2_CERT_DISPOSABLE_DB: 'YES'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install PostgreSQL client
         run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
       - name: Bootstrap Supabase database roles in disposable PostgreSQL

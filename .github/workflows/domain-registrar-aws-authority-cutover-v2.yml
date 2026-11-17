@@ -35,7 +35,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate corrected cutover contract
         run: |
           set -euo pipefail
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials for read-only cutover prerequisites
         uses: aws-actions/configure-aws-credentials@v6.2.3
