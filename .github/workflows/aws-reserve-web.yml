@@ -120,7 +120,7 @@ jobs:
         run: bash scripts/dr/require-production-dr-healthy.sh
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
